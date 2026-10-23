@@ -1,0 +1,30 @@
+import 'fake-indexeddb/auto';
+import { describe, expect, it } from 'vitest';
+import * as db from '../src/lib/db';
+import { parseText } from '../src/lib/parser';
+import { defaults } from '../src/types';
+describe('transactional local storage', () => {
+  it('isolates books and round-trips all data through a validated backup', async () => {
+    const a = await db.importBook(parseText('第一章 春\n春天来了\n第二章 夏\n夏天来了', '甲.txt', 'utf-8'), 60);
+    const b = await db.importBook(parseText('第一章 秋\n秋天来了', '乙.txt', 'utf-8'), 30);
+    a.position = { chapter: 1, offset: 3, fraction: .4, progress: .8 }; a.lastRead = Date.now();
+    await db.saveBook(a);
+    await db.saveBookmark({ id: 'bookmark', bookId: a.id, title: '夏', snippet: '夏天', position: a.position, createdAt: Date.now() });
+    await db.saveSettings({ ...defaults, theme: 'dark' });
+    const backup = await db.exportBackup(); db.validateBackup(backup);
+    expect(backup.books.find(book => book.id === b.id)?.position.progress).toBe(0);
+    await db.deleteBook(a.id);
+    expect(await db.getChapter(a.id, 0)).toBeUndefined(); expect(await db.listBookmarks()).toEqual([]);
+    expect(await db.getChapter(b.id, 0)).toBeDefined();
+    await db.restoreBackup(backup);
+    expect(await db.listBooks()).toHaveLength(2);
+    expect((await db.listBooks()).find(book => book.id === a.id)?.position).toEqual(a.position);
+    expect(await db.getSettings()).toEqual({ ...defaults, theme: 'dark' });
+    expect(await db.listBookmarks()).toHaveLength(1);
+    const bad = structuredClone(backup); bad.chapters[0].text = 'corrupt';
+    await expect(db.restoreBackup(bad)).rejects.toThrow('备份格式');
+    expect(await db.listBooks()).toHaveLength(2);
+    const orphan = structuredClone(backup); orphan.bookmarks[0].bookId = 'missing';
+    expect(() => db.validateBackup(orphan)).toThrow();
+  });
+});
