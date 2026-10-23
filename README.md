@@ -44,6 +44,14 @@ Service Worker 预缓存应用的 HTML、CSS、JS、Worker、图标与 manifest�
 
 浏览器可能因用户清理、隐私模式、空间压力等删除网站数据。页面提供持久存储申请，但浏览器可拒绝，也不保证永久保留。**定期导出备份才是长期保存的保障。** 没有自动跨设备同步；换域名或部署路径也可能改变可访问的数据库/缓存范围。不要把同一域名下的其他不受信任应用与私人书房混用，因为 IndexedDB 以 origin 隔离，不按 URL 路径隔离。
 
+## 私人阅读链接（手机点开即读）
+
+可选功能：本机运行 `node scripts/create-private-book.mjs 本地小说.txt`，生成 `public/shared/随机编号.jdb` 加密文件。仅把该加密文件随工程发布；完整私人链接和随机密钥保存在被 Git 忽略的 `.tools/private-books/`，绝不能提交到仓库。
+
+私人链接使用 `#private/编号/密钥`，密钥放在 URL fragment 中。手机首次打开完整链接后，在 Worker 中以 Web Crypto AES-256-GCM 解密、解析并自动保存书架，再直接打开阅读。以后同一设备重开完整链接会使用本地书籍和进度，不重复下载，也可离线使用。主屏幕独立存储中若还没有这本书，需要在线再次打开完整链接。
+
+**任何拿到完整链接的人都能解密这本书，请勿公开转发。** 这不是登录系统，也不自动同步跨设备进度。GitHub Pages 的公共资源中只有密文，托管该应用的人仍控制应用代码，因此该方式不防范网站代码被恶意更改；请仅使用自己信任的部署。备份包含解密后的正文，仍需自行妥善保管。
+
 ## GitHub Pages 部署
 
 1. 新建 GitHub 仓库，将工程提交至 `main`。`.gitignore` 已忽略 TXT、EPUB、备份、依赖与构建产物。提交前确认私人的小说和备份未被暂存；不需要上传目录中的小说。
@@ -51,7 +59,7 @@ Service Worker 预缓存应用的 HTML、CSS、JS、Worker、图标与 manifest�
 3. 推送 `main`，或在 Actions 手动运行“Deploy Jingdu to GitHub Pages”。工作流安装依赖、运行单元测试、构建并发布 `dist`。
 4. 在 Pages / Actions 查看部署返回的真实网址（一般为 `https://用户名.github.io/仓库名/`）。
 
-Vite 使用相对 `base: './'`，manifest 的 start_url/scope 也为相对路径。阅读路由放在 URL hash，刷新不会访问不存在的服务器路径。支持仓库子路径与自定义域名；访问目录时保留末尾 `/`。远程发布状态以 GitHub Actions 的实际结果为准。小说文件和本地书架不会随应用部署上传到 GitHub。
+Vite 使用相对 `base: './'`，manifest 的 start_url/scope 也为相对路径。阅读路由放在 URL hash，刷新不会访问不存在的服务器路径。支持仓库子路径与自定义域名；访问目录时保留末尾 `/`。远程发布状态以 GitHub Actions 的实际结果为准。原始 TXT 和本地书架不会以明文随应用部署上传到 GitHub；可选私人阅读链接仅发布加密书籍文件。
 
 ## 实现结构
 
