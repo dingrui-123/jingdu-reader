@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的私人 TXT 小说阅读器。无账户、无追踪、无正文上传；支持 iPhone Safari、Windows Chrome 和离线 PWA。原始小说不包含在应用内，也不提交至仓库。
 
-本次构建、14 项单元测试和 12 项 Chrome/WebKit 浏览器测试已通过；真实 iPhone 验收尚待进行。详细结果和限制见 [TESTING.md](./TESTING.md)。
+构建与自动化测试方法见下方，最新验证结果和限制见 [TESTING.md](./TESTING.md)。真实 iPhone 验收尚待进行。
 
 ## 启动
 
@@ -49,6 +49,10 @@ Service Worker 预缓存应用的 HTML、CSS、JS、Worker、图标与 manifest�
 可选功能：本机运行 `node scripts/create-private-book.mjs 本地小说.txt`，生成 `public/shared/随机编号.jdb` 加密文件。仅把该加密文件随工程发布；完整私人链接和随机密钥保存在被 Git 忽略的 `.tools/private-books/`，绝不能提交到仓库。
 
 私人链接使用 `#private/编号/密钥`，密钥放在 URL fragment 中。手机首次打开完整链接后，在 Worker 中以 Web Crypto AES-256-GCM 解密、解析并自动保存书架，再直接打开阅读。以后同一设备重开完整链接会使用本地书籍和进度，不重复下载，也可离线使用。主屏幕独立存储中若还没有这本书，需要在线再次打开完整链接。
+
+新生成的书籍先 gzip 压缩，再以 AES-256-GCM 加密（JDP2）；解密和有大小上限的解压均在 Worker 中完成，原文逐字节保留。兼容先前未压缩的 JDP1 加密包。浏览器缺少解压支持时明确提示更新浏览器。
+
+多本书分别生成加密包后，运行 `node scripts/create-private-library.mjs 小说甲.txt 小说乙.txt`，生成一次导入整套书籍的私人链接，保存于被忽略的 `.tools/private-library.json`。它使用 `#collection/…`，最多包含 20 本书，所有密钥仍只在 fragment 中。打开后逐本下载、解密、保存，完成后显示书架；已经存在的来源编号会直接复用，原进度不变。失败时点击重试，或重新打开完整链接，会跳过已保存书籍继续；首次请保持联网与页面打开。同一设备已保存全部书籍后，离线也能打开该链接。
 
 **任何拿到完整链接的人都能解密这本书，请勿公开转发。** 这不是登录系统，也不自动同步跨设备进度。GitHub Pages 的公共资源中只有密文，托管该应用的人仍控制应用代码，因此该方式不防范网站代码被恶意更改；请仅使用自己信任的部署。备份包含解密后的正文，仍需自行妥善保管。
 
