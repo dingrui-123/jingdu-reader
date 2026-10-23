@@ -1,0 +1,11 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.deploy-upload/
+.tools/
+*.txt
+*.epub
+*.jingdu.json
+!robots.txt
