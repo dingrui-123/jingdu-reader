@@ -49,9 +49,9 @@ export const saveSettings = (settings: Settings) => transact<void>(['settings'],
 export const saveBook = (book: Book) => transact<void>(['books'], 'readwrite', tx => { tx.objectStore('books').put(book); });
 export const saveBookmark = (mark: Bookmark) => transact<void>(['bookmarks'], 'readwrite', tx => { tx.objectStore('bookmarks').put(mark); });
 export const deleteBookmark = (id: string) => transact<void>(['bookmarks'], 'readwrite', tx => { tx.objectStore('bookmarks').delete(id); });
-export async function importBook(parsed: Parsed, size: number, onProgress: (percent: number) => void = () => {}) {
+export async function importBook(parsed: Parsed, size: number, onProgress: (percent: number) => void = () => {}, sourceId?: string) {
   const id = crypto.randomUUID();
-  const book: Book = { id, title: parsed.title.trim() || '未命名书籍', author: parsed.author, size, encoding: parsed.encoding,
+  const book: Book = { id, sourceId, title: parsed.title.trim() || '未命名书籍', author: parsed.author, size, encoding: parsed.encoding,
     chapterCount: parsed.chapters.length, length: parsed.length, createdAt: Date.now(), lastRead: 0,
     position: { chapter: 0, offset: 0, fraction: 0, progress: 0 },
     chapters: parsed.chapters.map(({ text: _, ...info }) => info) };
