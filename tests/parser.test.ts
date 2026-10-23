@@ -50,12 +50,12 @@ describe('TXT decoding and section indexing', () => {
     console.log(`Synthetic ${text.length.toLocaleString()} chars: ${(performance.now() - start).toFixed(0)} ms`);
   });
   it('checks the local user-provided novel when available, without bundling it', async () => {
-    const file = readdirSync('.').find(name => name.endsWith('.txt'));
-    if (!file) return;
+    for (const file of readdirSync('.').filter(name => name.endsWith('.txt'))) {
     const bytes = readFileSync(file); const start = performance.now();
     const decoded = await decodeFile(new Blob([bytes])); const result = parseText(decoded.text, file, decoded.encoding);
     expect(result.chapters.map(c => c.text).join('')).toBe(decoded.text);
     expect(result.chapters.length).toBeGreaterThan(1000);
-    console.log(`Local novel: ${bytes.length} bytes, ${decoded.text.length} chars, ${result.chapters.length} sections, ${decoded.encoding}, ${(performance.now() - start).toFixed(0)} ms`);
+    console.log(`${file}: ${bytes.length} bytes, ${decoded.text.length} chars, ${result.chapters.length} sections, ${decoded.encoding}, ${(performance.now() - start).toFixed(0)} ms`);
+    }
   });
 });

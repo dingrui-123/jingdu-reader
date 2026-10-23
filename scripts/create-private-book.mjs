@@ -1,6 +1,7 @@
 // Run locally; never write the key or private link into public/ or tracked source.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { randomBytes, createCipheriv } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { basename, resolve } from 'node:path';
 const input = process.argv[2];
 if (!input || !/\.txt$/i.test(input)) throw new Error('Usage: node scripts/create-private-book.mjs <local.txt>');
@@ -11,9 +12,9 @@ if (name.length > 1024) throw new Error('Filename is too long');
 const header = Buffer.alloc(4); header.writeUInt32BE(name.length);
 const plain = Buffer.concat([header, name, raw]);
 const id = randomBytes(18).toString('base64url'); const key = randomBytes(32); const iv = randomBytes(12);
-const magic = Buffer.from('JDP1');
+const magic = Buffer.from('JDP2');
 const cipher = createCipheriv('aes-256-gcm', key, iv); cipher.setAAD(magic);
-const encrypted = Buffer.concat([magic, iv, cipher.update(plain), cipher.final(), cipher.getAuthTag()]);
+const encrypted = Buffer.concat([magic, iv, cipher.update(gzipSync(plain)), cipher.final(), cipher.getAuthTag()]);
 await mkdir('public/shared', { recursive: true }); await mkdir('.tools/private-books', { recursive: true });
 const file = `public/shared/${id}.jdb`;
 await writeFile(file, encrypted, { flag: 'wx' });
