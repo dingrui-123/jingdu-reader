@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的私人 TXT 小说阅读器。无账户、无追踪、无正文上传；支持 iPhone Safari、Windows Chrome 和离线 PWA。原始小说不包含在应用内，也不提交至仓库。
 
-本次构建、9 项单元测试和 8 项 Chrome/WebKit 浏览器测试已通过；真实 iPhone 验收尚待进行。详细结果和限制见 [TESTING.md](./TESTING.md)。
+本次构建、14 项单元测试和 12 项 Chrome/WebKit 浏览器测试已通过；真实 iPhone 验收尚待进行。详细结果和限制见 [TESTING.md](./TESTING.md)。
 
 ## 启动
 

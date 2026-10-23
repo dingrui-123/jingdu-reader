@@ -43,3 +43,12 @@ Chrome 移动视口测试中，文件选择、解析、确认导入、保存合�
 - [WebKit 存储政策](https://webkit.org/blog/14403/updates-to-storage-policy/)
 - [Safari 17.2 中主屏幕应用的数据隔离说明](https://webkit.org/blog/14787/webkit-features-in-safari-17-2/)
 - [Vite GitHub Pages 部署说明](https://vite.dev/guide/static-deploy.html#github-pages)
+
+
+## 私人阅读链接扩展（2026-10-23）
+
+新增 AES-256-GCM 加密书籍包和 fragment 密钥链接，在 Worker 内解密、解析、保存并直接打开书籍。已保存书籍凭来源编号复用，断网重开不下载、不重复建书。
+
+本次验证：生产构建通过，14 项单元测试通过，12 项 Chrome/WebKit 浏览器测试全部通过（约 1.9 分钟）。新增检查包括：原始文件字节完整性、错误密钥与密文篡改拒绝、链接路径约束、来源编号备份恢复、自动打开正文、离线恢复位置与无重复下载。
+
+真实 TXT 已在本机加密；公开资源仅包含加密书籍包。随机密钥和完整链接只保存在被 Git 忽略的 .tools/private-books/，未写入源码、manifest、Service Worker 或公开仓库。此功能不提供跨设备进度同步；真实 iPhone 仍需设备验收。
