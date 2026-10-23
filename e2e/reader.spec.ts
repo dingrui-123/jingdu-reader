@@ -1,0 +1,103 @@
+import { test, expect, type Page } from '@playwright/test';
+import { readdirSync } from 'node:fs';
+const novel = Array.from({ length: 6 }, (_, i) => `第${i + 1}章 山间来信\n${Array.from({ length: 90 }, (_, j) => `段落${j}：清晨的风拂过山谷，书中的故事缓缓展开。把时光留给文字，把目光留给远方。`).join('\n')}\n`).join('');
+async function importSample(page: Page) {
+  await page.getByRole('button', { name: '导入书籍', exact: true }).click();
+  await page.getByLabel('选择 TXT 文件').setInputFiles({ name: '山间来信_佚名.txt', mimeType: 'text/plain', buffer: Buffer.from(novel) });
+  await expect(page.getByRole('button', { name: '加入书架', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '加入书架', exact: true }).click();
+  await expect(page.getByRole('button', { name: '阅读 山间来信', exact: true })).toBeVisible();
+}
+async function getPosition(page: Page) {
+  await page.waitForTimeout(850);
+  return page.evaluate(async () => new Promise<any>((resolve, reject) => {
+    const req = indexedDB.open('jingdu', 1);
+    req.onsuccess = () => { const d = req.result; const r = d.transaction('books').objectStore('books').getAll(); r.onsuccess = () => { resolve(r.result[0].position); d.close(); }; r.onerror = reject; }; req.onerror = reject;
+  }));
+}
+test('import, settings, anchor restore, chapters, bookmarks, backup and offline', async ({ page, context }) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('./'); await importSample(page);
+  await page.getByRole('button', { name: '阅读 山间来信', exact: true }).click();
+  await expect(page.locator('.reading-article h1')).toHaveText('第1章 山间来信');
+  await page.locator('.reading-scroll').evaluate(el => { el.scrollTop = 2350; });
+  const before = await getPosition(page); expect(before.offset).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '添加书签', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('书签已保存');
+  await page.getByRole('button', { name: '阅读设置', exact: true }).click();
+  await page.getByRole('button', { name: '夜读', exact: false }).click();
+  await page.getByLabel('字体大小', { exact: true }).fill('24');
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  const changed = await getPosition(page); expect(changed.offset).toBe(before.offset);
+  await page.reload(); await expect(page.locator('.reading-article h1')).toBeVisible();
+  const after = await getPosition(page); expect(after.offset).toBe(before.offset); expect(Math.abs(after.fraction - changed.fraction)).toBeLessThan(.08);
+  await page.getByRole('button', { name: '章节目录', exact: true }).click();
+  await page.getByLabel('搜索章节').fill('第3章');
+  await page.getByRole('button', { name: /第3章 山间来信/ }).click();
+  await expect(page.locator('.reading-article h1')).toHaveText('第3章 山间来信');
+  expect((await getPosition(page)).chapter).toBe(2);
+  await page.getByRole('button', { name: '书架', exact: true }).click();
+  await page.getByRole('button', { name: '我的书签', exact: true }).click();
+  await expect(page.locator('.bookmark-card')).toHaveCount(1);
+  await page.locator('.bookmark-card>button').first().click();
+  await expect(page.locator('.reading-article h1')).toHaveText('第1章 山间来信');
+  expect((await getPosition(page)).offset).toBe(before.offset);
+  await page.getByRole('button', { name: '书架', exact: true }).click();
+  await page.getByRole('button', { name: '阅读与数据', exact: true }).click();
+  const download = page.waitForEvent('download'); await page.getByRole('button', { name: '导出完整备份', exact: true }).click();
+  const backupPath = await (await download).path(); expect(backupPath).toBeTruthy();
+  await page.getByRole('button', { name: /^我的书架/ }).click();
+  await page.getByRole('button', { name: '山间来信的详情', exact: true }).click();
+  page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: '删除这本书', exact: true }).click();
+  await expect(page.getByRole('button', { name: '阅读 山间来信', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '阅读与数据', exact: true }).click();
+  await page.getByLabel('选择备份文件').setInputFiles(backupPath!);
+  await page.getByRole('button', { name: '确认替换并恢复', exact: true }).click();
+  await expect(page.getByText('书房已从备份恢复。')).toBeVisible();
+  await page.getByRole('button', { name: /^我的书架/ }).click();
+  await expect(page.getByRole('button', { name: '阅读 山间来信', exact: true })).toBeVisible();
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload(); await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+  await context.setOffline(true); await page.reload();
+  await page.getByRole('button', { name: '阅读 山间来信', exact: true }).click();
+  await expect(page.locator('.reading-article h1')).toHaveText('第1章 山间来信');
+  expect((await getPosition(page)).offset).toBe(before.offset);
+  expect(errors).toEqual([]);
+});
+test('large local novel import runs in worker with bounded DOM', async ({ page }) => {
+  const file = readdirSync('.').find(name => name.endsWith('.txt')); test.skip(!file, 'Local private fixture is optional');
+  await page.goto('./'); await page.getByRole('button', { name: '导入书籍', exact: true }).click();
+  const start = Date.now(); await page.getByLabel('选择 TXT 文件').setInputFiles(file!);
+  await expect(page.getByRole('button', { name: '加入书架', exact: true })).toBeVisible({ timeout: 30000 });
+  console.log(`Large novel: decode+parse ${Date.now() - start}ms`);
+  await page.getByRole('button', { name: '加入书架', exact: true }).click();
+  await expect(page.locator('.cover-button')).toHaveCount(1, { timeout: 90000 });
+  console.log(`12MB-class local novel: import+persist ${Date.now() - start}ms`);
+  await page.locator('.cover-button').click(); await expect(page.locator('.reading-article h1')).toBeVisible();
+  expect(await page.locator('.reading-article>p').count()).toBeLessThan(1000);
+  await page.getByRole('button', { name: '章节目录', exact: true }).click();
+  expect(await page.locator('.toc-list>button').count()).toBeLessThanOrEqual(80);
+});
+test('browser worker decodes GB18030/GBK Chinese without mojibake', async ({ page }) => {
+  await page.goto('./'); await page.getByRole('button', { name: '导入书籍', exact: true }).click();
+  await page.getByLabel('选择 TXT 文件').setInputFiles({ name: '编码测试.txt', mimeType: 'text/plain', buffer: Buffer.from([0xb5,0xda,0xd2,0xbb,0xd5,0xc2,0x20,0xc4,0xe3,0xba,0xc3,0x0a,0xc4,0xe3,0xba,0xc3]) });
+  await expect(page.locator('.text-preview')).toContainText('第一章 你好');
+  await expect(page.locator('.preview-facts')).toContainText('GB18030');
+  await page.getByRole('button', { name: '加入书架', exact: true }).click();
+  await page.locator('.cover-button').click();
+  await expect(page.locator('.reading-article h1')).toHaveText('第一章 你好');
+});
+test('mobile layout has no horizontal overflow', async ({ page }) => {
+  await page.goto('./');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await importSample(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: '关闭提示', exact: true }).click();
+  await page.screenshot({ path: `test-results/${test.info().project.name}-mobile-library.png`, fullPage: true });
+  await page.locator('.cover-button').click();
+  await expect(page.locator('.reading-article h1')).toBeVisible();
+  await page.screenshot({ path: `test-results/${test.info().project.name}-mobile-reader.png` });
+  await page.getByRole('button', { name: '书架', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: `test-results/${test.info().project.name}-desktop-library.png`, fullPage: true });
+});
