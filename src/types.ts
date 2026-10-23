@@ -3,6 +3,7 @@ export interface Settings { theme: Theme; fontSize: number; lineHeight: number; 
 export const defaults: Settings = { theme: 'paper', fontSize: 20, lineHeight: 1.9, paragraphGap: 14, margin: 24 };
 export interface Position { chapter: number; offset: number; fraction: number; progress: number }
 export interface Book {
+  sourceId?: string;
   id: string; title: string; author: string; size: number; encoding: string;
   chapterCount: number; length: number; createdAt: number; lastRead: number;
   position: Position; chapters: ChapterInfo[];

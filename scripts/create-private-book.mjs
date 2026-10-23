@@ -1,0 +1,22 @@
+// Run locally; never write the key or private link into public/ or tracked source.
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { randomBytes, createCipheriv } from 'node:crypto';
+import { basename, resolve } from 'node:path';
+const input = process.argv[2];
+if (!input || !/\.txt$/i.test(input)) throw new Error('Usage: node scripts/create-private-book.mjs <local.txt>');
+const raw = await readFile(input);
+if (!raw.length || raw.length > 80 * 1024 * 1024) throw new Error('TXT must contain 1 byte to 80 MiB');
+const name = Buffer.from(basename(input), 'utf8');
+if (name.length > 1024) throw new Error('Filename is too long');
+const header = Buffer.alloc(4); header.writeUInt32BE(name.length);
+const plain = Buffer.concat([header, name, raw]);
+const id = randomBytes(18).toString('base64url'); const key = randomBytes(32); const iv = randomBytes(12);
+const magic = Buffer.from('JDP1');
+const cipher = createCipheriv('aes-256-gcm', key, iv); cipher.setAAD(magic);
+const encrypted = Buffer.concat([magic, iv, cipher.update(plain), cipher.final(), cipher.getAuthTag()]);
+await mkdir('public/shared', { recursive: true }); await mkdir('.tools/private-books', { recursive: true });
+const file = `public/shared/${id}.jdb`;
+await writeFile(file, encrypted, { flag: 'wx' });
+const link = `https://dingrui-123.github.io/jingdu-reader/#private/${id}/${key.toString('base64url')}`;
+await writeFile(`.tools/private-books/${id}.json`, JSON.stringify({ id, file, name: basename(input), secret: key.toString('base64url'), link }, null, 2), { flag: 'wx' });
+console.log(JSON.stringify({ id, file, encryptedBytes: encrypted.length, privateLinkSavedTo: resolve(`.tools/private-books/${id}.json`) }));

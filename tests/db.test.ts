@@ -27,4 +27,11 @@ describe('transactional local storage', () => {
     const orphan = structuredClone(backup); orphan.bookmarks[0].bookId = 'missing';
     expect(() => db.validateBackup(orphan)).toThrow();
   });
+  it('keeps a private source identifier through backup, without storing its decryption key', async () => {
+    const book = await db.importBook(parseText('第一章 春\n山间有风', '私书.txt', 'utf-8'), 20, () => {}, 'test-private-source');
+    const backup = await db.exportBackup(); db.validateBackup(backup);
+    expect(backup.books.find(b => b.id === book.id)?.sourceId).toBe('test-private-source');
+    await db.restoreBackup(backup);
+    expect((await db.listBooks()).find(b => b.id === book.id)?.sourceId).toBe('test-private-source');
+  });
 });
