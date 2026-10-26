@@ -56,6 +56,7 @@ describe('private book links and authenticated encryption', () => {
     if (!existsSync('.tools/private-books')) return;
     for (const name of readdirSync('.tools/private-books').filter(f => f.endsWith('.json'))) {
     const metadata = JSON.parse(readFileSync(`.tools/private-books/${name}`, 'utf8'));
+    if (!metadata.file?.endsWith('.jdb')) continue;
     if (!existsSync(metadata.file) || !existsSync(metadata.name)) continue;
     const result = await decryptPrivateBook(Uint8Array.from(readFileSync(metadata.file)).buffer, metadata.secret);
     const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');

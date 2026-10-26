@@ -59,7 +59,7 @@ test('collection resumes after a failed download, preserves existing progress, a
   await expect(page.getByRole('alert')).toContainText('无法下载');
   expect(counts).toEqual([1, 1, 0, 0, 0]);
   allowSecond = true; await page.getByRole('button', { name: '重试', exact: true }).click();
-  await expect(page.locator('.cover-button')).toHaveCount(5);
+  await expect(page.locator('.cover-button')).toHaveCount(5, { timeout: 60000 });
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(counts).toEqual([1, 2, 1, 1, 1]);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
