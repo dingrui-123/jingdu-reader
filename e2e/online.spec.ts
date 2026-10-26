@@ -79,6 +79,32 @@ test('saved private library discovers new books on refresh and respects deleted 
   await expect(page.locator('.cover-button')).toHaveCount(1); await page.reload();
   await expect(page.getByRole('button', { name: '阅读 新增远行', exact: true })).toBeVisible(); await expect(page.locator('.cover-button')).toHaveCount(1);
 });
+test('upgraded device with books but no library access gets an explicit connection flow and manual sync', async ({ page }) => {
+  const old = fixture(4); const added = fixture(3); added.descriptor.title = '新增书目';
+  await attach(page, old); await attach(page, added);
+  await writeFile(`dist/stream/${old.libraryId}.jdi`, old.reCatalog([old.descriptor, added.descriptor]));
+  await page.goto(`./#private/${old.id}/${old.secret}`);
+  await expect(page.locator('.reading-article h1')).toHaveText('第1章 远行');
+  await page.locator('.reading-scroll').evaluate(el => { el.scrollTop = 1300; }); await page.waitForTimeout(850);
+  await page.getByRole('button', { name: '书架', exact: true }).click();
+  await page.evaluate(() => sessionStorage.setItem('jingdu:sync-after-update', '1')); await page.reload();
+  await expect(page.getByText('此设备尚未连接在线书目', { exact: true })).toBeVisible();
+  await expect(page.getByText('应用已更新。此设备尚未连接在线书目，请点击“连接私人书架”添加新书。', { exact: true })).toBeVisible();
+  await expect(page.locator('.cover-button')).toHaveCount(1);
+  await page.getByRole('button', { name: '连接私人书架', exact: true }).click();
+  await page.getByLabel('私人书架链接', { exact: true }).fill('not-a-private-link');
+  await page.getByRole('button', { name: '连接并同步', exact: true }).click(); await expect(page.getByRole('alert')).toContainText('完整');
+  await page.getByLabel('私人书架链接', { exact: true }).fill(new URL(old.link, page.url()).href);
+  await page.getByRole('button', { name: '连接并同步', exact: true }).click();
+  await expect(page.locator('.cover-button')).toHaveCount(2); await expect(page.getByText('已连接在线书目', { exact: true })).toBeVisible();
+  expect(await chapterCount(page)).toBe(0);
+  await page.getByLabel('搜索书名', { exact: true }).fill('在线远行'); await expect(page.locator('.cover-button')).toHaveCount(1);
+  await page.getByRole('button', { name: '同步书目', exact: true }).click(); await expect(page.locator('.cover-button')).toHaveCount(2); await expect(page.getByLabel('搜索书名', { exact: true })).toHaveValue('');
+  await page.screenshot({ path: `test-results/${test.info().project.name}-book-sync-upgrade.png`, fullPage: true });
+  await page.getByRole('button', { name: '阅读 在线远行', exact: true }).click();
+  await expect(page.locator('.reading-article h1')).toHaveText('第1章 远行');
+  await expect.poll(() => page.locator('.reading-scroll').evaluate(el => el.scrollTop)).toBeGreaterThan(1000);
+});
 test('explicit offline download survives offline reload and release keeps bookmarks and reading position', async ({ page, context }) => {
   const book = fixture(8); const requests = await attach(page, book); await page.goto(book.link);
   await page.getByRole('button', { name: '阅读 在线远行', exact: true }).click(); await expect(page.locator('.reading-article h1')).toHaveText('第1章 远行');

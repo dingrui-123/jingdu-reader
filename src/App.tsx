@@ -11,6 +11,7 @@ import { PrivateBookImport } from './components/PrivateBookImport';
 import { RemoteLibraryImport } from './components/RemoteLibraryImport';
 import { BookStorageActions } from './components/BookStorageActions';
 import { syncLibrary } from './lib/remote';
+import { readShelfLink } from './lib/remote-format';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
 function Cover({ book, small = false }: { book: Book; small?: boolean }) {
@@ -29,15 +30,35 @@ export default function App() {
   const [online, setOnline] = useState(navigator.onLine); const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(''); const [persisted, setPersisted] = useState<boolean | null>(null);
   const [restore, setRestore] = useState<import('./types').Backup>();
+  const [hasLibrary, setHasLibrary] = useState<boolean>(); const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false); const [libraryLink, setLibraryLink] = useState(''); const [connectionError, setConnectionError] = useState('');
+  const syncTask = useRef<Promise<void> | undefined>(undefined);
   const restoreInput = useRef<HTMLInputElement>(null);
   const { needRefresh: [needRefresh], offlineReady: [offlineReady], updateServiceWorker } = useRegisterSW({ onRegisterError(e) { setError('离线资源注册失败：' + String(e)); } });
   async function refresh() { const [b, m] = await Promise.all([db.listBooks(), db.listBookmarks()]); setBooks(b); setMarks(m); }
-  async function updateLibrary() {
-    if (!navigator.onLine || location.hash.startsWith('#shelf/')) return;
-    const access = await db.getLibraryAccess(); if (!access) return;
-    const before = (await db.listBooks()).length;
-    const result = await syncLibrary(access); await refresh();
-    if (result.length > before) setNotice(`在线书架已更新，新增 ${result.length - before} 本书。正文按章加载，不自动下载整本。`);
+  function updateLibrary(manual = false): Promise<void> {
+    if (syncTask.current) return syncTask.current;
+    const task = async () => {
+      const access = await db.getLibraryAccess(); setHasLibrary(!!access);
+      if (location.hash.startsWith('#shelf/')) return;
+      let afterUpdate = false;
+      try { afterUpdate = sessionStorage.getItem('jingdu:sync-after-update') === '1'; sessionStorage.removeItem('jingdu:sync-after-update'); } catch { /* Connection state is still shown if session storage is unavailable. */ }
+      if (!access) {
+        if (afterUpdate) setNotice('应用已更新。此设备尚未连接在线书目，请点击“连接私人书架”添加新书。');
+        if (manual) { setConnectionError(''); setConnecting(true); }
+        return;
+      }
+      if (!navigator.onLine) { if (manual || afterUpdate) setError('同步书目需要联网；已保存的书籍和进度仍可使用。'); return; }
+      setSyncing(true);
+      try {
+        const before = (await db.listBooks()).length;
+        const result = await syncLibrary(access); await refresh();
+        if (manual) setQuery('');
+        if (manual || afterUpdate || result.length > before) setNotice(`书目已同步，已连接 ${result.length} 本书${result.length > before ? `，新增 ${result.length - before} 本` : ''}。正文按章加载，不自动下载整本。`);
+      } finally { setSyncing(false); }
+    };
+    syncTask.current = task().finally(() => { syncTask.current = undefined; });
+    return syncTask.current;
   }
   useEffect(() => {
     Promise.all([refresh(), db.getSettings().then(setSettings)]).catch(e => setError(String(e))).finally(() => setLoading(false));
@@ -84,9 +105,13 @@ export default function App() {
     <main className="workspace"><header className="topbar"><span>私人书房 <span className="slash">/</span> {view === 'library' ? '我的书架' : view === 'marks' ? '我的书签' : '阅读与数据'}</span><div className="connection"><span className={`status-dot ${online ? '' : 'offline'}`}/>{online ? offlineReady ? '已就绪，可离线阅读' : '本地存储' : '离线阅读中'}<Icon name="shield" size={15}/></div></header>
       {error && <div className="alert" role="alert">{error}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
       {notice && <div className="notice" role="status">{notice}<button className="icon-button" aria-label="关闭提示" onClick={() => setNotice('')}><Icon name="close" size={16}/></button></div>}
-      {needRefresh && <div className="notice">新版本已经准备好。阅读进度将保留。<button className="secondary" onClick={() => { void updateServiceWorker(true); }}>更新应用</button></div>}
+      {needRefresh && <div className="notice">新版本已经准备好。阅读进度将保留，更新后会检查在线书目连接。<button className="secondary" onClick={() => {
+        try { sessionStorage.setItem('jingdu:sync-after-update', '1'); } catch { /* Optional update explanation only. */ }
+        void updateServiceWorker(true).catch(e => setError('应用更新未完成：' + String(e)));
+      }}>更新应用</button></div>}
       {view === 'library' && <>
         <div className="page-heading"><div><p className="eyebrow">A LITTLE SPACE, A THOUSAND STORIES</p><h1>我的书架<span className="title-dot">.</span></h1><p className="muted">让世界慢下来，从翻开一本书开始。</p></div><button className="primary" onClick={() => setImporting(true)} disabled={loading}><Icon name="plus" size={18}/>导入书籍</button></div>
+        <section className="library-sync" aria-label="在线书目连接"><div><strong>{hasLibrary === undefined ? '正在检查书目连接…' : hasLibrary ? '已连接在线书目' : '此设备尚未连接在线书目'}</strong><p>{hasLibrary ? '联网时自动检查新增书籍，也可手动同步。正文按章加载。' : '更新应用只更新阅读器。连接私人书架后，新书才会显示在这里；原有书籍和进度会保留。'}</p></div><button className="secondary" disabled={hasLibrary === undefined || syncing || loading} onClick={() => { void updateLibrary(true).catch(e => setError('书目同步失败，原有书籍和进度已保留：' + String(e))); }}>{syncing ? '正在同步书目…' : hasLibrary ? '同步书目' : '连接私人书架'}</button></section>
         {recent ? <section className="continue-card"><div className="continue-copy"><span className="eyebrow"><span className="tiny-line"/>{recent.lastRead ? '继续上次的旅程' : '一本新书，一段新旅程'}</span><h2>{recent.title}</h2><p>{recent.author || '私人藏书'}<span>·</span>{recent.chapters[recent.position.chapter]?.title}</p><div className="continue-progress"><div className="progress-track"><i style={{ width: `${recent.position.progress * 100}%` }}/></div><span>已读 {(recent.position.progress * 100).toFixed(1)}%</span></div><button className="continue-button" onClick={() => open(recent)}>{recent.lastRead ? '继续阅读' : '开始阅读'}<Icon name="arrow" size={16}/></button></div><div className="hero-cover"><Cover book={recent} small/></div><div className="hero-arc"/></section> : <section className="welcome-card"><div><span className="eyebrow"><span className="tiny-line"/>为好故事留一个位置</span><h2>一方书房，<br/>万千世界。</h2><p>带上你喜欢的文字。<br/>这里没有打扰，只有你和下一页。</p><button className="text-button accent" onClick={() => setImporting(true)}>导入第一本书<Icon name="arrow" size={16}/></button></div><div className="welcome-art" aria-hidden="true"><div className="art-sun"/><div className="art-book b1"/><div className="art-book b2"/><div className="art-book b3"/><div className="art-shelf"/><span>THE JOY OF GETTING LOST<br/>IN A GOOD BOOK.</span></div></section>}
         <section className="library-section"><div className="section-toolbar"><div className="section-title"><h2>全部书籍</h2><span>{books.length} 本藏书</span></div><div className="library-tools"><label className="search-box"><Icon name="search" size={17}/><input aria-label="搜索书名" placeholder="搜索书名" value={query} onChange={e => setQuery(e.target.value)}/></label><select aria-label="书籍排序" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">最近阅读</option><option value="added">最近添加</option><option value="title">书名排序</option></select></div></div>
           {loading ? <div className="empty-state" role="status">正在打开你的书房…</div> : <div className="books-grid">{sorted.map(book => <article className="book-card" key={book.id}><button className="cover-button" aria-label={`阅读 ${book.title}`} onClick={() => open(book)}><Cover book={book}/></button><div className="book-info"><div><button className="book-title" onClick={() => open(book)}>{book.title}</button><p>{book.author || '作者未填写'}</p></div><button className="icon-button" aria-label={`${book.title}的详情`} onClick={() => setDetail(book)}><Icon name="more" size={18}/></button></div><div className="book-progress"><span>{book.lastRead ? `已读 ${(book.position.progress * 100).toFixed(1)}%` : '尚未翻开'}</span><small>{book.remote ? book.storage === 'offline' ? '已离线' : '在线按章' : '本地 TXT'}</small></div><div className="progress-track"><i style={{ width: `${book.position.progress * 100}%` }}/></div></article>)}{!query && <button className="add-book" onClick={() => setImporting(true)}><span><Icon name="plus" size={26}/></span><strong>添一本好书</strong><small>导入本地 TXT 文件</small></button>}</div>}
@@ -101,8 +126,19 @@ export default function App() {
         try { if (file.size > 200 * 1024 * 1024) throw new Error('备份大于 200 MB，请在桌面端拆分书架后备份。'); const data: unknown = JSON.parse(await file.text()); db.validateBackup(data); setRestore(data); } catch (e) { setError(String(e)); } finally { setBusy(false); }
       }}/><p className="caption">备份是明文文件，包含正文或私人阅读钥匙，请保存在你信任的位置。</p></section><section className="settings-card"><h2>随时离线，安心本地</h2><p className="muted">在 iPhone Safari 中点“分享 → 添加到主屏幕”。建议先安装，再从主屏幕打开并导入小说；两种打开方式可能使用独立存储。</p><p className="muted">浏览器清理数据、无痕模式或空间不足都可能使数据丢失。离线缓存保存应用，IndexedDB 保存书籍，二者各自独立。</p><button className="secondary" disabled={persisted === true} onClick={async () => { try { const granted = await navigator.storage?.persist?.(); setPersisted(granted ?? false); setNotice(granted ? '浏览器已授予持久存储。仍建议定期备份。' : '浏览器暂未授予持久存储；你仍可正常阅读，请定期备份。'); } catch (e) { setError(String(e)); } }}><Icon name="shield" size={17}/>{persisted ? '已启用持久存储' : '申请持久存储'}</button><p className="caption">无账户 · 无追踪 · 无正文上传<br/>离线功能需通过 HTTPS 或本机 localhost 使用；首次在线打开后，请用断网重开确认缓存已完成。</p></section></div></div></>}
     </main>
+    {connecting && <Modal title="连接私人书架" busy={syncing} onClose={() => { setConnecting(false); setLibraryLink(''); setConnectionError(''); }}><p className="muted">把完整的新版私人书架链接粘贴到下方，即可在当前 Safari 或主屏幕应用中连接。只加载目录，不下载整本正文。</p><form onSubmit={async e => {
+      e.preventDefault(); setConnectionError('');
+      const value = libraryLink.trim(); let hash = value;
+      try { if (!value.startsWith('#')) hash = new URL(value).hash; } catch { setConnectionError('请粘贴完整的私人书架链接，包含 #shelf/ 后的内容。'); return; }
+      const access = readShelfLink(hash);
+      if (!access) { setConnectionError('这不是新版私人书架链接，请使用包含 #shelf/ 的完整链接。'); return; }
+      if (!navigator.onLine) { setConnectionError('首次连接需要联网，请恢复网络后再试。'); return; }
+      setSyncing(true);
+      try { const result = await syncLibrary(access); await refresh(); setHasLibrary(true); setConnecting(false); setLibraryLink(''); setQuery(''); setView('library'); setNotice(`已连接 ${result.length} 本书。原有进度和书签已保留，正文按章加载。`); }
+      catch (error) { setConnectionError(String(error)); } finally { setSyncing(false); }
+    }}><label className="field">私人书架链接<input aria-label="私人书架链接" value={libraryLink} onChange={e => setLibraryLink(e.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="https://…/#shelf/…" disabled={syncing}/></label>{connectionError && <p className="error" role="alert">{connectionError}</p>}<button className="primary full" style={{ marginTop: 20 }} disabled={syncing || !libraryLink.trim()}>{syncing ? '正在连接…' : '连接并同步'}</button></form><p className="caption">Safari 和主屏幕应用可能使用独立存储，请在你平时读书的入口里连接。完整链接含私人钥匙，请勿公开转发。</p></Modal>}
     {!loading && routeHash.startsWith('#shelf/') && <RemoteLibraryImport hash={routeHash} onClose={() => { history.replaceState(null, '', location.pathname + location.search); setRouteHash(''); }} onReady={count => {
-      history.replaceState(null, '', location.pathname + location.search); setRouteHash(''); setView('library'); setNotice(`${count} 本书已连接。默认在线按章阅读，需要离线时可单独下载整本。`); void refresh().catch(e => setError(String(e)));
+      history.replaceState(null, '', location.pathname + location.search); setRouteHash(''); setView('library'); setHasLibrary(true); setQuery(''); setNotice(`${count} 本书已连接。默认在线按章阅读，需要离线时可单独下载整本。`); void refresh().catch(e => setError(String(e)));
     }}/ >}
     {!loading && (routeHash.startsWith('#private/') || routeHash.startsWith('#collection/')) && <PrivateBookImport hash={routeHash} onClose={() => { history.replaceState(null, '', location.pathname + location.search); setRouteHash(''); void refresh().catch(e => setError(String(e))); }} onReady={(ready, collection) => {
       history.replaceState(null, '', collection ? location.pathname + location.search : `#read/${ready[0].id}`); setRouteHash(location.hash);
