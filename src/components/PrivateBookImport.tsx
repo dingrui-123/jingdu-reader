@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { importBook, listBooks } from '../lib/db';
+import { importBook, listBooks, mergeRemoteBooks } from '../lib/db';
 import { readPrivateLinks } from '../lib/private-book';
+import { fetchBookSource } from '../lib/remote';
 import type { Book, Parsed } from '../types';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
@@ -26,8 +27,13 @@ export function PrivateBookImport({ hash, onReady, onClose }: { hash: string; on
           setStep(links.length > 1 ? `第 ${index + 1} / ${links.length} 本` : ''); setProgress(0); setSaving(false);
           const existing = saved.find(book => book.sourceId === link.id);
           if (cancelled) return;
-          if (existing) { ready.push(existing); continue; }
+          if (existing?.remote || (existing && !navigator.onLine)) { ready.push(existing); continue; }
           if (!navigator.onLine) throw new Error('这台设备还没有保存这本书，首次打开需要联网。');
+          setStage('正在连接在线目录，不下载整本正文…');
+          const remote = await fetchBookSource(link, abort.signal);
+          if (cancelled) return;
+          if (remote) { const [book] = await mergeRemoteBooks([remote]); ready.push(book); continue; }
+          if (existing) { ready.push(existing); continue; }
           setStage('首次打开，正在下载加密书籍…');
           const response = await fetch(`${import.meta.env.BASE_URL}shared/${link.id}.jdb`, { signal: abort.signal, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
           if (!response.ok) throw new Error('暂时无法下载这本书，请检查网络后重试。');
@@ -70,7 +76,7 @@ export function PrivateBookImport({ hash, onReady, onClose }: { hash: string; on
     return () => { cancelled = true; abort.abort(); worker?.terminate(); };
   }, [hash, retry]);
   return <Modal title={collection ? '导入私人书架' : '打开私人藏书'} busy={saving} onClose={onClose}>
-    <div className="private-book-message"><Icon name="shield" size={32}/><p className="muted">{collection ? '将逐本保存到本设备，完成后回到书架。已有书籍会自动跳过，并保留阅读进度；中断后重新打开链接可继续。' : '首次打开会自动把书保存到本设备。完成后可直接阅读，无需再次选择 TXT 文件。'}</p></div>
+    <div className="private-book-message"><Icon name="shield" size={32}/><p className="muted">{collection ? '逐本连接在线目录，正文按章加载。已有离线书籍及进度保留；旧格式书籍仍需完整保存，中断后可重试。' : '优先连接在线目录，正文按章加载。旧格式书籍需首次完整保存。已有书籍和进度会保留。'}</p></div>
     {step && <p className="caption">{step}</p>}
     {error ? <><p role="alert" className="error">{error}</p><button className="primary full" onClick={() => setRetry(n => n + 1)}>重试</button></> : <div role="status"><p className="caption">{stage}</p><progress value={progress} max="100"/><p className="caption">{progress}% · 首次保存请保持页面打开</p></div>}
     <p className="caption">完整链接相当于这本书的钥匙，请勿公开转发。阅读进度保存在当前设备，不会自动同步。</p>

@@ -7,7 +7,8 @@ const MAX_SECTION = 18000;
 export function parseText(text: string, filename: string, encoding: string): Parsed {
   if (!text.trim()) throw new Error('文件没有可阅读的正文。');
   const stem = filename.replace(/\.txt$/i, '');
-  const parts = stem.split(/[_＿]/);
+  const named = /^《(.+?)》.*?作者[：:]\s*(.+)$/.exec(stem);
+  const parts = named ? [named[1], named[2]] : stem.split(/[_＿]/);
   const markers: { start: number; title: string; lineEnd?: number }[] = [];
   const lines = /[^\r\n]*(?:\r\n|\r|\n|$)/g;
   let match: RegExpExecArray | null;
